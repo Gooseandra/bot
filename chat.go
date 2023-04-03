@@ -75,6 +75,14 @@ var timeAttributeKeyboard = tgbotapi.NewReplyKeyboard(
 )
 
 const (
+	helloText = "Привет, я Олег Жёсткожимов, помогаю братанам с сохранением и анализом своих результатов в качалочке!\n" +
+		"Сначала зайди в настройки и добавь упражнения, разберёшься там, я буду тебе помогать\n" +
+		"Ну а потом можешь и потренироваться, нажав на кнопку \"Начать тренировку\", там я тебе тоже помогу, выберешь упражнение" +
+		", запишешь свои результаты. Чуть не забыл, важно отметить, что помимо того, что нужно быть аккуратнее при работе" +
+		"с весами, ещё если ты меняешь вес, то записывай это как начало нового упражнения, просто мне так проще ориентироваться" +
+		" в данных, заранее благодарю! Ну удачных тренировок тебе, дружище, если что, ты знаешь где меня искать, " +
+		"я всегда буду тут!"
+
 	StartTrainText      = "Начало тренировки"
 	TrainSettingsText   = "Настройки"
 	AddExeciseText      = "Добавить упражнение"
@@ -244,51 +252,52 @@ func TrainProcess(id int64, channal chan tgbotapi.Update, execs []string, db *sq
 					rows.Scan(&exec)
 					attributes = append(attributes, exec)
 				}
+				timeSearchIndex := 0
+				timeExist := false
+				for {
+					if attributes[timeSearchIndex] == TimeText {
+						timeExist = true
+						break
+					}
+					timeSearchIndex++
+				}
+				if timeExist {
+					showCmd := tgbotapi.NewMessage(id, "Отсчёт времени пошёл, братэлло!")
+					showCmd.ReplyMarkup = timeAttributeKeyboard
+					BotAPI.Request(showCmd)
+					timeStart := time.Now()
+					str, err := InputText(id, channal, "")
+					if err != nil {
+						log.Println(err.Error())
+					}
+					switch str {
+					case TimeEndText:
+						timeEnd := time.Now()
+						timeOfExec := timeEnd.Sub(timeStart)
+						timeOfExec = timeOfExec.Truncate(time.Nanosecond * 10)
+						milliTime := int64(timeOfExec.Milliseconds())
+						BotAPI.Send(tgbotapi.NewMessage(id, "Закончили, отдыхаем!\nВремя составило "+
+							MillisecondsToTime(milliTime).Format("04:05.06")))
+						db.Exec(`insert into "results"("trainid", "execid", "attribute", "value") values ($1, $2, $3, $4)`,
+							trainID, execId, "Время", milliTime)
+					case InputTimeByUserText:
+						timeStr, err := InputText(id, channal, "Введи время, бро\nШаблон: 01:02:03, 02:03.004")
+						if err != nil {
+							log.Println(err.Error())
+						}
+						timeT, err := time.Parse("04:05.06", timeStr)
+						if err != nil {
+							log.Println(err.Error())
+						}
+						log.Println(timeT)
+					}
+				}
 				i := 0
 				for {
 					if i >= len(attributes) {
 						break
 					}
-					timeSearchIndex := 0
-					timeExist := false
-					for {
-						if attributes[timeSearchIndex] == TimeText {
-							timeExist = true
-							break
-						}
-						timeSearchIndex++
-					}
-					if timeExist {
-						showCmd := tgbotapi.NewMessage(id, "Отсчёт времени пошёл, братэлло!")
-						showCmd.ReplyMarkup = timeAttributeKeyboard
-						BotAPI.Request(showCmd)
-						timeStart := time.Now()
-						str, err := InputText(id, channal, "")
-						if err != nil {
-							log.Println(err.Error())
-						}
-						switch str {
-						case TimeEndText:
-							timeEnd := time.Now()
-							timeOfExec := timeEnd.Sub(timeStart)
-							timeOfExec = timeOfExec.Truncate(time.Nanosecond * 10)
-							milliTime := int64(timeOfExec.Milliseconds())
-							BotAPI.Send(tgbotapi.NewMessage(id, "Закончили, отдыхаем!\nВремя составило "+
-								MillisecondsToTime(milliTime).Format("04:05.06")))
-							db.Exec(`insert into "results"("trainid", "execid", "attribute", "value") values ($1, $2, $3, $4)`,
-								trainID, execId, attributes[i], milliTime)
-						case InputTimeByUserText:
-							timeStr, err := InputText(id, channal, "Введи время, бро\nШаблон: 01:02:03, 02:03.004")
-							if err != nil {
-								log.Println(err.Error())
-							}
-							timeT, err := time.Parse("04:05.06", timeStr)
-							if err != nil {
-								log.Println(err.Error())
-							}
-							log.Println(timeT)
-						}
-					}
+
 					if attributes[i] != TimeText {
 						value, err := InputText(id, channal, attributes[i]+"?")
 						if err != nil {
@@ -395,6 +404,7 @@ func (chat Chat) routine(chats map[int64]Chat, mainMutex *sync.Mutex, db *sql.DB
 				case nilStatus:
 					switch message.Message.Text {
 					case "/start":
+						BotAPI.Send(tgbotapi.NewMessage(chat.id, helloText))
 						status = ShowMainScreen(chat.id)
 					}
 				case MainStatus:
@@ -503,7 +513,26 @@ func (chat Chat) routine(chats map[int64]Chat, mainMutex *sync.Mutex, db *sql.DB
 									if j >= attributeValue {
 										break
 									}
-									fmt.Fprint(result, "   "+attributeNames[iterator+j]+" - "+values[iterator+j]+"\n")
+									if attributeNames[iterator+j] == TimeText {
+										var hours int
+										var min int
+										var sec int
+										var msec int
+										timeint, err := strconv.Atoi(values[iterator+j])
+										if err != nil {
+											log.Println(err.Error())
+										}
+										msec = timeint % 1000
+										sec = timeint / 1000
+										min = sec / 60
+										sec = sec % 60
+										hours = min / 60
+										min = min / 60
+										fmt.Fprint(result, "   "+attributeNames[iterator+j]+" - "+
+											strconv.Itoa(hours)+":"+strconv.Itoa(min)+":"+strconv.Itoa(sec)+"."+strconv.Itoa(msec)+"\n")
+									} else {
+										fmt.Fprint(result, "   "+attributeNames[iterator+j]+" - "+values[iterator+j]+"\n")
+									}
 									j++
 								}
 								iterator += j
