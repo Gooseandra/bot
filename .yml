@@ -1,4 +1,0 @@
-database:
-  arguments: host=localhost port=5432 user=postgres password=2208jar2208 dbname=postgres sslmode=disable
-  type: postgres
-telegram: 5320330883:AAELK_cYw02yCCVSAzjcMF6ig5iBwuc9jls
